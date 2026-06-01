@@ -136,9 +136,9 @@ axs[0].set_ylabel("Rotacija (°)")
 axs[0].legend()
 
 for i in range(qd_t.shape[1]):
-    axs[1].plot(t_arr, qd_t[:, i], label=f"q{i}")
+    axs[1].plot(t_arr, np.degrees(qd_t[:, i]), label=f"q{i}")
 
-axs[1].set_ylabel("Brzina")
+axs[1].set_ylabel("Brzina (°)")
 axs[1].set_xlabel("Vrijeme")
 axs[1].legend()
 
@@ -168,5 +168,6 @@ for i in tqdm(range(len(t_arr))):
 
 print(r.joint_locs[-1])
 print(dh)
+print(f"Ukupno vrijeme: {t_arr[-1]:.2f} s")
 
 gen_gif(frames, "robot.gif")
