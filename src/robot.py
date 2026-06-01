@@ -1,8 +1,7 @@
 import typing as T
 import numpy as np
 import matplotlib.pyplot as plt
-
-from src.util import base_translation, rot_x
+import io
 
 class Robot:
     def __init__(self, joint_locs: np.ndarray, joint_bases: np.ndarray) -> None:
@@ -27,11 +26,12 @@ class Robot:
             raise RuntimeError("Joint bases are not initialised")
 
         
-    def plot(self, target: T.Optional[np.ndarray] = None, show: bool = False):
-        plt.figure()
+    def plot(self, target: T.Optional[np.ndarray] = None, show: bool = True):
+        fig = plt.figure(figsize=(5, 5))
+
         ax = plt.axes(projection="3d")
         ax.view_init(elev=20, azim=135)  # type: ignore
-        bounds = (-5.0, 5.0)
+        bounds = (-2.0, 2.0)
         ax.set_xlim(*bounds)
         ax.set_ylim(*bounds)
         ax.set_zlim(*bounds)  # type: ignore
@@ -39,13 +39,6 @@ class Robot:
         # Path trace
         if len(self.path_locs) > 0:
             path = np.asarray(self.path_locs, dtype=np.float64)
-
-            # max_pts = 100
-            # steps_total = len(path)
-
-            # if steps_total > max_pts:
-            #     idx = np.linspace(0, steps_total - 1, max_pts).astype(int)
-            #     path = path[idx]
 
             _, joints, _ = path.shape
 
@@ -91,13 +84,20 @@ class Robot:
                 )
 
         if target is not None:
-            ax.scatter(target[0], target[2], target[1], c="red", marker="*", s=50)
+            ax.scatter(target[0], target[2], target[1], c="red", marker="*", s=50) # type: ignore
 
-        ax.set_box_aspect([1, 1, 1])
+        ax.set_box_aspect([1, 1, 1]) # type: ignore
         plt.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
 
         if show:
             plt.show()
+
+        return buf.getvalue()
 
     def print_info(self):
         print(f"Joints: {len(self.joint_locs)} / Links: {len(self.joint_locs) - 1}")
@@ -109,22 +109,18 @@ class Robot:
 
     # FWD Kinematics
 
-    def _base_translation(self, joint_a: int, joint_b: int):
-        return base_translation(self.joint_bases[joint_a], self.joint_bases[joint_b])
-
-    def _translate_operation(self, op: np.ndarray, joint_a: int, joint_b: int):
-        T = self._base_translation(joint_a, joint_b)
-        return T @ op @ T.T
-
     def rotate_joint(self, joint: int, phi: float):
-        T = base_translation(np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]]), self.joint_bases[joint])
-        op = T @ rot_x(phi) @ T.T
-        self.joint_bases[joint] @= op
+        z = self.joint_bases[joint, 2]
+        K = np.array([
+            [ 0,     -z[2],  z[1]],
+            [ z[2],   0,    -z[0]],
+            [-z[1],   z[0],  0   ]
+        ])
+        op = np.eye(3) + np.sin(phi) * K + (1 - np.cos(phi)) * (K @ K)
+        
         for j in range(joint + 1, self.n_joints):
-            self.joint_locs[j] = self.joint_locs[joint] + ((self.joint_locs[j] - self.joint_locs[joint]) @ op)
-            self.joint_bases[j] @= op
-
-        for j in range(joint, self.n_joints):
-            self.joint_bases[j] = np.linalg.qr(self.joint_bases[j].T)[0].T
-
+            self.joint_locs[j] = self.joint_locs[joint] + op @ (self.joint_locs[j] - self.joint_locs[joint])
+            self.joint_bases[j] = self.joint_bases[j] @ op.T
+        
+        self.joint_bases[joint] = self.joint_bases[joint] @ op.T
         self.path_locs.append(self.joint_locs.copy())
